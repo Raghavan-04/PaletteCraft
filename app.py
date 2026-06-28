@@ -10,15 +10,17 @@ Features:
   • Delta-E paint-map visual overlay
   • Exportable recipes and inventory management
   • Auto-recipe generation on colour selection
+  • Native Streamlit buttons for smooth state transitions
 """
 
 import io
 import json
 import uuid
+import copy 
 
 import numpy as np
 import streamlit as st
-from PIL import Image
+from PIL import Image, UnidentifiedImageError 
 
 from utils.calibration import auto_white_balance, get_image_array
 from utils.color_utils import hex_to_rgb, rgb_to_hex, rgb_to_lab, delta_e_76
@@ -48,44 +50,6 @@ st.markdown("""
 }
 .pc-header h1 { margin: 0; font-size: 2rem; }
 .pc-header p  { margin: 0; opacity: 0.85; font-size: 0.95rem; }
-
-/* ── Colour swatches / chips ── */
-.swatch-circle {
-    width: 48px; height: 48px;
-    border-radius: 50%;
-    border: 3px solid rgba(0,0,0,0.15);
-    display: inline-block;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-    transition: transform .2s;
-}
-.swatch-circle:hover { transform: scale(1.12); }
-
-/* ── Clickable Palette Chip ── */
-.palette-chip {
-    width: 100%;
-    height: 60px;
-    border-radius: 10px;
-    border: 3px solid #aaa;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-    margin-bottom: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 12px;
-    color: white;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-}
-.palette-chip:hover {
-    transform: scale(1.03);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-.palette-chip-selected {
-    border: 4px solid #667eea !important;
-    box-shadow: 0 0 0 3px #764ba2 !important;
-}
 
 /* ── Inventory card ── */
 .inv-card {
@@ -131,7 +95,6 @@ div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
 /* ── Mobile ── */
 @media (max-width: 768px) {
     .pc-header h1 { font-size: 1.5rem; }
-    .swatch-circle { width: 38px; height: 38px; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -155,7 +118,7 @@ DEFAULT_PAINTS = [
 # ══════════════════════════════ SESSION STATE ═════════════════════════════════
 def _init():
     defaults = {
-        "inventory"         : DEFAULT_PAINTS.copy(),
+        "inventory"         : copy.deepcopy(DEFAULT_PAINTS),  
         "original_image"    : None,
         "calibrated_array"  : None,
         "cal_method"        : "gray_world",
@@ -165,7 +128,8 @@ def _init():
         "recipe"            : None,
         "paint_map_image"   : None,
         "threshold"         : 8.0,
-        "max_colors"        : 3,  # <-- NEW: stores slider value
+        "max_colors"        : 3,
+        "last_image_fingerprint": None, # Used to prevent re-processing on clicks
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -182,13 +146,11 @@ def _pil_bytes(img: Image.Image, fmt: str = "PNG") -> bytes:
 
 
 def _sel_hex() -> str:
-    """Hex of the currently selected colour, or neutral gray."""
     c = st.session_state.selected_color
     return rgb_to_hex(*c) if c else "#888888"
 
 
 def _color_block(hex_c: str, w: int = 50, h: int = 50, radius: int = 10) -> str:
-    """Render an inline colour swatch div."""
     return (
         f'<div style="width:{w}px;height:{h}px;background:{hex_c};'
         f'border-radius:{radius}px;border:2px solid #555;'
@@ -197,13 +159,10 @@ def _color_block(hex_c: str, w: int = 50, h: int = 50, radius: int = 10) -> str:
 
 
 def _set_selected(rgb: list, name: str = "Custom"):
-    """Select a colour and automatically calculate the recipe."""
-    # Store the selected colour
     st.session_state.selected_color = rgb
     st.session_state.selected_color_name = name
     st.session_state.paint_map_image = None
     
-    # 🆕 AUTO-CALCULATE RECIPE (no need to press "Calculate" button)
     if st.session_state.inventory and rgb is not None:
         with st.spinner("🧪 Auto-calculating recipe..."):
             recipe = find_best_recipe(
@@ -215,8 +174,12 @@ def _set_selected(rgb: list, name: str = "Custom"):
 
 
 def _process_image(source):
-    """Load → resize → calibrate → extract palette."""
-    img = Image.open(source).convert("RGB")
+    try:
+        img = Image.open(source).convert("RGB")
+    except Exception as e:
+        st.error("⚠️ The uploaded file is corrupted or not a valid image format.")
+        return
+
     arr = get_image_array(img, max_size=1200)
     st.session_state.original_image = Image.fromarray(arr)
 
@@ -241,11 +204,10 @@ with st.sidebar:
     st.caption(f"🖌️ {n_inv} paint{'s' if n_inv != 1 else ''} in inventory")
     st.divider()
 
-    # ── Add custom paint ──────────────────────────────────────────────────
     with st.expander("➕ Add a Paint"):
         new_name = st.text_input("Paint name", placeholder="e.g. Naples Yellow")
         new_hex  = st.color_picker("Colour", "#FF6B00")
-        if st.button("Add to Inventory", use_container_width=True):
+        if st.button("Add to Inventory", width="stretch"):
             if new_name.strip():
                 rgb_val = list(hex_to_rgb(new_hex))
                 st.session_state.inventory.append({
@@ -259,7 +221,6 @@ with st.sidebar:
             else:
                 st.warning("Please enter a paint name.")
 
-    # ── Quick-add presets ─────────────────────────────────────────────────
     with st.expander("🗂️ Add Preset Paint"):
         existing_names = {p["name"] for p in st.session_state.inventory}
         available = [p for p in DEFAULT_PAINTS if p["name"] not in existing_names]
@@ -267,17 +228,16 @@ with st.sidebar:
             preset = st.selectbox(
                 "Choose preset:", [p["name"] for p in available], key="preset_sel"
             )
-            if st.button("Add Preset", use_container_width=True):
+            if st.button("Add Preset", width="stretch"):
                 for p in available:
                     if p["name"] == preset:
-                        st.session_state.inventory.append(p.copy())
+                        st.session_state.inventory.append(copy.deepcopy(p))
                         st.rerun()
         else:
             st.info("All presets already in inventory!")
 
     st.divider()
 
-    # ── Current inventory list ─────────────────────────────────────────────
     st.markdown("### My Paint Box")
     for paint in list(st.session_state.inventory):
         c1, c2 = st.columns([5, 1])
@@ -299,7 +259,6 @@ with st.sidebar:
 
     st.divider()
 
-    # ── Calibration settings ───────────────────────────────────────────────
     with st.expander("⚙️ Calibration Settings"):
         method = st.radio(
             "Auto White-Balance:",
@@ -345,20 +304,29 @@ tab_img, tab_recipe, tab_map, tab_inv = st.tabs([
 with tab_img:
     st.markdown("### 📸 Upload Your Inspiration Photo")
 
-    col_u, col_c = st.columns(2)
-    with col_u:
-        uploaded = st.file_uploader(
+    input_method = st.radio(
+        "Choose image source:", 
+        ["Upload a file", "Use camera"], 
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
+    source = None
+    if input_method == "Upload a file":
+        source = st.file_uploader(
             "Upload image", type=["jpg", "jpeg", "png", "webp", "bmp"],
             label_visibility="collapsed",
         )
-    with col_c:
-        camera = st.camera_input("📷 Take a photo", label_visibility="visible")
+    else:
+        source = st.camera_input("📷 Take a photo", label_visibility="visible")
 
-    source = uploaded or camera
     if source:
-        _process_image(source)
+        # Create a unique fingerprint so we don't re-process on every button click
+        file_fingerprint = f"{source.name}_{source.size}"
+        if st.session_state.get("last_image_fingerprint") != file_fingerprint:
+            _process_image(source)
+            st.session_state["last_image_fingerprint"] = file_fingerprint
 
-    # ── Show images once loaded ────────────────────────────────────────────
     if st.session_state.calibrated_array is not None:
         arr = st.session_state.calibrated_array
         cal_img = Image.fromarray(arr)
@@ -367,12 +335,11 @@ with tab_img:
         col_orig, col_cal = st.columns(2)
         with col_orig:
             st.markdown("**Original Photo**")
-            st.image(st.session_state.original_image, use_container_width=True)
+            st.image(st.session_state.original_image, width="stretch")
         with col_cal:
             st.markdown("**✨ Calibrated Photo**")
-            st.image(cal_img, use_container_width=True)
+            st.image(cal_img, width="stretch")
 
-        # ── Palette chips ──────────────────────────────────────────────────
         st.markdown("---")
         st.markdown("### 🎨 Dominant Colour Palette")
         st.caption("👆 **Click any colour swatch below** to select it. The recipe will auto-calculate!")
@@ -381,25 +348,23 @@ with tab_img:
             pal_cols = st.columns(len(st.session_state.palette))
             for i, rgb in enumerate(st.session_state.palette):
                 hx = rgb_to_hex(*rgb)
-                is_sel = (st.session_state.selected_color == rgb)
-                
-                # Build the chip style
-                border_style = "palette-chip-selected" if is_sel else ""
-                # Determine text color for contrast
-                brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000
-                text_color = "black" if brightness > 140 else "white"
+                # Safely compare hex codes to ensure UI correctly highlights the choice
+                is_sel = (hx == _sel_hex())
                 
                 with pal_cols[i]:
-                    # 🆕 Make the ENTIRE CHIP clickable using st.button
-                    if st.button(
-                        f"<div class='palette-chip {border_style}' style='background:{hx};color:{text_color};'>{hx.upper()}</div>",
-                        key=f"pal_chip_{i}",
-                        use_container_width=True,
-                    ):
+                    border_style = "4px solid #667eea" if is_sel else "2px solid #aaa"
+                    
+                    st.markdown(
+                        f'<div style="background:{hx}; height:45px; border-radius:8px; '
+                        f'border:{border_style}; margin-bottom:8px;'
+                        f'box-shadow:0 2px 5px rgba(0,0,0,0.15);"></div>',
+                        unsafe_allow_html=True
+                    )
+                    
+                    if st.button(hx.upper(), key=f"pal_btn_{i}", use_container_width=True):
                         _set_selected(rgb, f"Palette #{i+1}")
                         st.rerun()
 
-        # ── Pixel colour picker ────────────────────────────────────────────
         st.markdown("---")
         st.markdown("### 🔍 Custom Pixel Picker")
         st.caption(
@@ -419,12 +384,11 @@ with tab_img:
             py = st.number_input("Y (row ↓)",    0, h_img - 1, h_img // 2)
         with col_btn:
             st.write("")
-            if st.button("🎯 Sample", use_container_width=True):
+            if st.button("🎯 Sample", width="stretch"):
                 picked = get_pixel_color(arr, int(px), int(py))
                 _set_selected(picked, f"Pixel ({int(px)}, {int(py)})")
                 st.rerun()
 
-        # ── Selected colour readout ────────────────────────────────────────
         if st.session_state.selected_color:
             sel = st.session_state.selected_color
             sh  = rgb_to_hex(*sel)
@@ -469,7 +433,6 @@ with tab_recipe:
         sel     = st.session_state.selected_color
         sel_hex = rgb_to_hex(*sel)
 
-        # ── Target colour display ──────────────────────────────────────────
         col_tgt, col_opts = st.columns([1, 2])
         with col_tgt:
             st.markdown("**Target Colour**")
@@ -481,16 +444,13 @@ with tab_recipe:
             )
         with col_opts:
             st.markdown("**Options**")
-            # 🆕 Bind slider to session state
             max_p = st.slider(
                 "Maximum colours to mix", 1, 3, st.session_state.max_colors,
                 help="Using 3 colours gives the best match but takes longer to calculate.",
                 key="max_colors_slider"
             )
-            # Update session state if slider changes
             if max_p != st.session_state.max_colors:
                 st.session_state.max_colors = max_p
-                # Auto-recalculate with new max
                 if st.session_state.selected_color is not None:
                     with st.spinner("🔄 Recalculating recipe..."):
                         recipe = find_best_recipe(
@@ -501,8 +461,7 @@ with tab_recipe:
                         st.session_state.recipe = recipe
                         st.rerun()
 
-            # Manual override button (just in case)
-            if st.button("🔄 Recalculate Recipe", type="primary", use_container_width=True):
+            if st.button("🔄 Recalculate Recipe", type="primary", width="stretch"):
                 with st.spinner("Optimising mixing ratios…"):
                     recipe = find_best_recipe(
                         sel,
@@ -512,7 +471,6 @@ with tab_recipe:
                 st.session_state.recipe = recipe
                 st.rerun()
 
-        # ── Display recipe ─────────────────────────────────────────────────
         if st.session_state.recipe:
             recipe  = st.session_state.recipe
             mixed   = recipe["mixed_rgb"]
@@ -521,7 +479,6 @@ with tab_recipe:
             st.markdown("---")
             st.markdown("### 📋 Mixing Recipe")
 
-            # Metrics row
             m1, m2, m3 = st.columns(3)
             m1.metric("Match Quality", recipe["match_quality"])
             m2.metric(
@@ -531,7 +488,6 @@ with tab_recipe:
             )
             m3.metric("Paints Used", len(recipe["paints"]))
 
-            # Simulated mix vs target comparison
             cmp1, cmp2 = st.columns(2)
             with cmp1:
                 st.markdown("**🎯 Target**")
@@ -554,8 +510,7 @@ with tab_recipe:
 
             total_parts = sum(p["parts"] for p in recipe["paints"])
             for paint in recipe["paints"]:
-                pct = paint["parts"] / total_parts * 100
-                # Convert to scoops (round to nearest 0.5)
+                pct = (paint["parts"] / total_parts * 100) if total_parts > 0 else 0
                 scoops = round(paint["parts"] * 2) / 2
                 
                 col_dot, col_name, col_scoop, col_pct = st.columns([0.5, 2.5, 2, 3])
@@ -573,7 +528,6 @@ with tab_recipe:
                     st.write(f"{pct:.0f}% of mix")
                 st.progress(pct / 100)
 
-            # Human-readable summary
             summary = " + ".join(
                 f"{round(p['parts'] * 2) / 2} scoop{'s' if round(p['parts'] * 2) / 2 != 1 else ''} of {p['name']}"
                 for p in recipe["paints"]
@@ -583,7 +537,6 @@ with tab_recipe:
                 unsafe_allow_html=True,
             )
 
-            # Download recipe
             txt = (
                 f"PaletteCraft — Paint Recipe\n"
                 f"===========================\n"
@@ -602,6 +555,7 @@ with tab_recipe:
                 data=txt,
                 file_name="palettecraft_recipe.txt",
                 mime="text/plain",
+                width="stretch",
             )
 
         else:
@@ -626,7 +580,6 @@ with tab_map:
         sel     = st.session_state.selected_color
         sel_hex = rgb_to_hex(*sel)
 
-        # ── Controls ───────────────────────────────────────────────────────
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             threshold = st.slider(
@@ -647,7 +600,7 @@ with tab_map:
 
         col_g, col_info = st.columns([1, 2])
         with col_g:
-            gen = st.button("🗺️ Generate Paint Map", type="primary", use_container_width=True)
+            gen = st.button("🗺️ Generate Paint Map", type="primary", width="stretch")
         with col_info:
             st.markdown(
                 f'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
@@ -681,11 +634,11 @@ with tab_map:
                 st.markdown("**Calibrated Image**")
                 st.image(
                     Image.fromarray(st.session_state.calibrated_array),
-                    use_container_width=True,
+                    width="stretch",
                 )
             with col_map2:
                 st.markdown("**🗺️ Paint Map Overlay**")
-                st.image(st.session_state.paint_map_image, use_container_width=True)
+                st.image(st.session_state.paint_map_image, width="stretch")
 
             st.markdown(f"""
             **Legend:**
@@ -700,12 +653,23 @@ with tab_map:
                 data=buf.getvalue(),
                 file_name="palettecraft_paint_map.png",
                 mime="image/png",
+                width="stretch",
             )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 4 — MY INVENTORY                                                      ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
+def is_valid_paint(p):
+    return (
+        isinstance(p, dict) and
+        isinstance(p.get("name"), str) and
+        isinstance(p.get("hex"), str) and
+        isinstance(p.get("rgb"), list) and
+        len(p["rgb"]) == 3 and
+        all(isinstance(v, (int, float)) for v in p["rgb"])
+    )
+
 with tab_inv:
     st.markdown("### 🎨 My Paint Inventory")
 
@@ -715,7 +679,6 @@ with tab_inv:
     else:
         st.caption(f"{len(inv)} paint{'s' if len(inv) != 1 else ''} in your collection")
 
-        # Grid — 4 columns
         CPR = 4
         for row_start in range(0, len(inv), CPR):
             cols = st.columns(CPR)
@@ -735,12 +698,10 @@ with tab_inv:
                             f'</div>',
                             unsafe_allow_html=True,
                         )
-                        if st.button("🎯 Select", key=f"use_{p['id']}",
-                                     use_container_width=True):
+                        if st.button("🎯 Select", key=f"use_{p['id']}", width="stretch"):
                             _set_selected(p["rgb"], p["name"])
                             st.rerun()
 
-        # ── Export / Import ────────────────────────────────────────────────
         st.markdown("---")
         st.markdown("#### 💾 Export / Import Inventory")
         col_ex, col_im = st.columns(2)
@@ -751,7 +712,7 @@ with tab_inv:
                 data=json.dumps(inv, indent=2),
                 file_name="palettecraft_inventory.json",
                 mime="application/json",
-                use_container_width=True,
+                width="stretch",
             )
 
         with col_im:
@@ -762,9 +723,7 @@ with tab_inv:
             if imp:
                 try:
                     data = json.load(imp)
-                    if (isinstance(data, list) and
-                            all("name" in p and "hex" in p and "rgb" in p for p in data)):
-                        # Ensure all entries have an 'id'
+                    if isinstance(data, list) and all(is_valid_paint(p) for p in data):
                         for p in data:
                             if "id" not in p:
                                 p["id"] = str(uuid.uuid4())[:8]
@@ -772,7 +731,7 @@ with tab_inv:
                         st.success(f"✅ Imported {len(data)} paints!")
                         st.rerun()
                     else:
-                        st.error("Invalid format — expected list of {name, hex, rgb}.")
+                        st.error("Invalid format — expected a list of objects with valid {name, hex, rgb[3]}")
                 except Exception as e:
                     st.error(f"Import error: {e}")
 
