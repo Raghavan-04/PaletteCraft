@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 from utils.color_utils import rgb_to_lab, delta_e_76
 
+# ─── Constants used elsewhere ──────────────────────────────
 NEON_COLOURS = {
     "Hot Pink": [255, 105, 180],
     "Neon Green": [57, 255, 20],
@@ -12,7 +13,7 @@ NEON_COLOURS = {
 
 def generate_paint_map(image_array, target_rgb, threshold=8.0,
                        overlay_color=[255, 0, 0], overlay_alpha=0.6, dim_factor=0.2):
-    """Keep this unchanged – used elsewhere."""
+    """Generate a neon overlay map for a single target colour (used in other parts)."""
     img_lab = rgb_to_lab(image_array)
     target_lab = rgb_to_lab(np.array([[target_rgb]]))[0][0]
     delta_e = delta_e_76(img_lab, target_lab)
@@ -27,6 +28,7 @@ def generate_paint_map(image_array, target_rgb, threshold=8.0,
     return Image.fromarray(canvas)
 
 def get_match_percentage(image_array, target_rgb, threshold=8.0):
+    """Compute what percentage of the image matches a target colour."""
     img_lab = rgb_to_lab(image_array)
     target_lab = rgb_to_lab(np.array([[target_rgb]]))[0][0]
     delta_e = delta_e_76(img_lab, target_lab)
@@ -38,30 +40,17 @@ def generate_layered_steps(image_array, palette, threshold=8.0):
     Build a sequence of layers starting from a white canvas.
     Each step paints one palette colour (in order) on top of the previous,
     and the final step is the original image.
-
-    Args:
-        image_array : (H,W,3) uint8 RGB image
-        palette     : list of RGB triplets (dominant colours)
-        threshold   : Delta-E threshold for colour matching (fixed, default 8.0)
-
-    Returns:
-        list of PIL Images: [step1, step2, ..., stepN, final_image]
     """
-    # Start with a white canvas (255,255,255)
     canvas = np.full_like(image_array, 255, dtype=np.uint8)
-
-    # Pre‑compute Lab for the entire image once
     img_lab = rgb_to_lab(image_array)
-
     steps = []
+
     for rgb_color in palette:
         target_lab = rgb_to_lab(np.array([[rgb_color]]))[0][0]
-        de = delta_e_76(img_lab, target_lab)   # (H,W) array
+        de = delta_e_76(img_lab, target_lab)
         mask = de < threshold
         canvas[mask] = rgb_color
         steps.append(Image.fromarray(canvas.copy()))
 
-    # Append the original calibrated image as the final step
-    steps.append(Image.fromarray(image_array))
-
+    steps.append(Image.fromarray(image_array))   # final original image
     return steps

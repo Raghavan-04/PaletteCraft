@@ -24,9 +24,9 @@ from PIL import Image, UnidentifiedImageError
 from streamlit_image_coordinates import streamlit_image_coordinates
 from utils.calibration import auto_white_balance, get_image_array
 from utils.color_utils import hex_to_rgb, rgb_to_hex, rgb_to_lab, delta_e_76
-from utils.kmeans_palette import extract_palette, get_pixel_color
+from utils.kmeans_palette import extract_palette, get_pixel_color, sort_palette_by_saturation 
 from utils.mixing_engine import find_best_recipe
-from utils.paint_map import generate_paint_map, get_match_percentage, NEON_COLOURS
+from utils.paint_map import generate_paint_map, get_match_percentage, NEON_COLOURS, generate_layered_steps
 
 # ══════════════════════════════ PAGE CONFIG ═══════════════════════════════════
 st.set_page_config(
@@ -118,18 +118,21 @@ DEFAULT_PAINTS = [
 # ══════════════════════════════ SESSION STATE ═════════════════════════════════
 def _init():
     defaults = {
-        "inventory"         : copy.deepcopy(DEFAULT_PAINTS),  
-        "original_image"    : None,
-        "calibrated_array"  : None,
-        "cal_method"        : "gray_world",
-        "palette"           : [],
-        "selected_color"    : None,
+        "inventory"          : copy.deepcopy(DEFAULT_PAINTS),
+        "original_image"     : None,
+        "calibrated_array"   : None,
+        "cal_method"         : "gray_world",
+        "palette"            : [],
+        "selected_color"     : None,
         "selected_color_name": "—",
-        "recipe"            : None,
-        "paint_map_image"   : None,
-        "threshold"         : 8.0,
-        "max_colors"        : 3,
-        "last_image_fingerprint": None, # Used to prevent re-processing on clicks
+        "recipe"             : None,
+        "paint_map_image"    : None,
+        "threshold"          : 8.0,
+        "max_colors"         : 3,
+        "last_image_fingerprint": None,
+        "num_palette_colors" : 10,          # <--- added for detail layers
+        "layer_steps"        : None,        # store generated layers
+        "last_click_id"      : None,        # for pixel picker
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -188,13 +191,17 @@ def _process_image(source):
     st.session_state.calibrated_array = cal
 
     with st.spinner("Extracting palette…"):
-        palette = extract_palette(cal, n_colors=5)
+        n_colors = st.session_state.num_palette_colors
+        palette = extract_palette(cal, n_colors=n_colors)
+        palette = sort_palette_by_saturation(palette)   # <-- add this
+
     st.session_state.palette = palette
 
     if palette:
         _set_selected(palette[0], "Dominant Colour #1")
 
     st.session_state.paint_map_image = None
+    st.session_state.layer_steps = None   # reset layers
 
 
 # ══════════════════════════════ SIDEBAR ══════════════════════════════════════
@@ -276,8 +283,9 @@ with st.sidebar:
                 orig = np.array(st.session_state.original_image)
                 cal  = auto_white_balance(orig, method=method)
                 st.session_state.calibrated_array = cal
-                st.session_state.palette = extract_palette(cal, n_colors=5)
+                st.session_state.palette = extract_palette(cal, n_colors=st.session_state.num_palette_colors)
                 st.session_state.paint_map_image = None
+                st.session_state.layer_steps = None
                 st.rerun()
 
 
@@ -321,7 +329,6 @@ with tab_img:
         source = st.camera_input("📷 Take a photo", label_visibility="visible")
 
     if source:
-        # Create a unique fingerprint so we don't re-process on every button click
         file_fingerprint = f"{source.name}_{source.size}"
         if st.session_state.get("last_image_fingerprint") != file_fingerprint:
             _process_image(source)
@@ -348,7 +355,6 @@ with tab_img:
             pal_cols = st.columns(len(st.session_state.palette))
             for i, rgb in enumerate(st.session_state.palette):
                 hx = rgb_to_hex(*rgb)
-                # Safely compare hex codes to ensure UI correctly highlights the choice
                 is_sel = (hx == _sel_hex())
                 
                 with pal_cols[i]:
@@ -371,46 +377,30 @@ with tab_img:
 
         h_img, w_img = arr.shape[:2]
 
-        # Create the interactive image picker
         click_coords = streamlit_image_coordinates(
             cal_img, 
             key="pixel_picker",
-            use_column_width=True
+            use_column_width=True    # <-- correct parameter
         )
 
         if click_coords is not None:
             px = click_coords["x"]
             py = click_coords["y"]
-            
-            # Create a fingerprint so it doesn't get stuck in a re-run loop
             click_id = f"{px}_{py}"
             
             if st.session_state.get("last_click_id") != click_id:
-                
-                # 🛠️ FIX THE SCALING BUG:
-                # Get the visual CSS width of the image on the screen
                 rendered_width = click_coords.get("width")
                 if not rendered_width:
-                    rendered_width = w_img # Fallback just in case
-                
-                # Calculate the difference between the screen size and the real array size
+                    rendered_width = w_img
                 scale_ratio = w_img / rendered_width
-                
-                # Map the click back to the true original coordinates
                 actual_x = int(px * scale_ratio)
                 actual_y = int(py * scale_ratio)
-                
-                # Clamp coordinates to ensure they don't exceed array limits due to rounding
                 actual_x = max(0, min(actual_x, w_img - 1))
                 actual_y = max(0, min(actual_y, h_img - 1))
                 
-                # Sample the TRUE pixel
                 picked = get_pixel_color(arr, actual_x, actual_y)
-                
-                # Update the selected color in session state
                 _set_selected(picked, f"Pixel ({actual_x}, {actual_y})")
                 st.session_state["last_click_id"] = click_id
-                
                 st.rerun()
 
         if st.session_state.selected_color:
@@ -426,6 +416,29 @@ with tab_img:
                 unsafe_allow_html=True,
             )
 
+        # ─── Palette Detail Level Slider ────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 🎨 Palette Detail Level")
+        num_colors = st.slider(
+            "Number of dominant colours to extract (more = finer layers)",
+            min_value=3, max_value=15, value=st.session_state.num_palette_colors, step=1,
+            help="More colours give more painting steps and better detail."
+        )
+        if num_colors != st.session_state.num_palette_colors:
+            st.session_state.num_palette_colors = num_colors
+            if st.session_state.calibrated_array is not None:
+                with st.spinner("Re‑extracting palette..."):
+                    palette = extract_palette(
+                        st.session_state.calibrated_array,
+                        n_colors=num_colors
+                    )
+                    st.session_state.palette = palette
+                    if palette:
+                        _set_selected(palette[0], "Dominant Colour #1")
+                    st.session_state.paint_map_image = None
+                    st.session_state.layer_steps = None
+                    st.rerun()
+
     else:
         st.info("👆 Upload a photo or take one with your camera to begin.")
         st.markdown("""
@@ -435,7 +448,7 @@ with tab_img:
         | Feature | Details |
         |---|---|
         | 🔬 Auto calibration | Removes lighting cast with Gray-World AWB |
-        | 🎨 Palette extraction | K-Means clustering finds 5 dominant hues |
+        | 🎨 Palette extraction | K-Means clustering finds dominant hues |
         | 🧪 Mixing recipes | Kubelka-Munk subtractive physics model |
         | 🗺️ Paint map | Neon overlay highlights where each colour lives |
         | 📦 Inventory | Manage your physical paint tubes |
@@ -589,8 +602,6 @@ with tab_recipe:
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 3 — PAINT MAP                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
-# ─── inside app.py, the tab_map section ───
-
 with tab_map:
     st.markdown("### 🗺️ Layer-by-Layer Paint Map")
     st.caption("Slide through the steps to see the painting build up from a white board.")
@@ -598,12 +609,10 @@ with tab_map:
     if st.session_state.calibrated_array is None or not st.session_state.palette:
         st.info("Upload an image in the **Image & Palette** tab first to extract your colours.")
     else:
-        # Fixed threshold – no user sliders
-        THRESHOLD = 8.0   # You can adjust this constant if you like
+        THRESHOLD = 8.0   # fixed value – no slider
 
         if st.button("🏗️ Build Layer Sequence", type="primary", use_container_width=True):
             with st.spinner("Generating painting steps..."):
-                from utils.paint_map import generate_layered_steps
                 steps = generate_layered_steps(
                     st.session_state.calibrated_array,
                     st.session_state.palette,
@@ -614,18 +623,16 @@ with tab_map:
 
         if "layer_steps" in st.session_state and st.session_state.layer_steps:
             steps = st.session_state.layer_steps
-            total = len(steps)   # palette length + 1 (final image)
+            total = len(steps)
 
             st.markdown("---")
-            # Slider from 1 to total, step 1
             step_idx = st.slider(
                 "Painting Progress (Layer)",
                 1, total, 1
-            ) - 1   # zero‑based index
+            ) - 1
 
             current_img = steps[step_idx]
 
-            # Label the step
             if step_idx < total - 1:
                 color_hex = rgb_to_hex(*st.session_state.palette[step_idx])
                 label = f"**Step {step_idx + 1}:** Painting <code>{color_hex.upper()}</code>"
@@ -633,9 +640,10 @@ with tab_map:
                 label = "**Final Step:** The full calibrated image"
 
             st.markdown(label, unsafe_allow_html=True)
-            st.image(current_img, use_column_width=True)
+            st.image(current_img, width="stretch")
         else:
             st.info("Click the button above to generate the layer sequence.")
+
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 4 — MY INVENTORY                                                      ║

@@ -9,57 +9,26 @@ scikit-learn's KMeans, and returns the cluster centres ordered by frequency
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans
 
-
-def extract_palette(
-    arr: np.ndarray,
-    n_colors: int = 5,
-    sample_size: int = 8000,
-    random_state: int = 42,
-) -> list:
+def extract_palette(image_array, n_colors=5):
     """
-    Extract the dominant colour palette from an image using K-Means.
-
-    MiniBatchKMeans is used instead of full KMeans for speed on large images
-    while producing nearly identical results.
-
-    Args:
-        arr         : uint8 RGB image array (H, W, 3)
-        n_colors    : number of dominant colours to find
-        sample_size : max number of pixels to use (random sample)
-        random_state: reproducibility seed
-
-    Returns:
-        List of [R, G, B] int lists, sorted by cluster size (largest first).
-        Each element is the representative colour of a dominant region.
+    Extract n dominant colours using K‑Means.
+    Returns colours sorted by frequency (most common first).
     """
-    pixels = arr.reshape(-1, 3).astype(np.float32)
+    arr = image_array.reshape(-1, 3).astype(np.float32)
 
-    # Subsample for performance
-    if len(pixels) > sample_size:
-        idx = np.random.default_rng(random_state).choice(
-            len(pixels), sample_size, replace=False
-        )
-        pixels_sample = pixels[idx]
-    else:
-        pixels_sample = pixels
+    from sklearn.cluster import KMeans
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
+    kmeans.fit(arr)
 
-    n_colors = min(n_colors, len(pixels_sample))
+    labels = kmeans.labels_
+    counts = np.bincount(labels)
 
-    km = MiniBatchKMeans(
-        n_clusters=n_colors,
-        random_state=random_state,
-        n_init=10,
-        batch_size=min(1024, len(pixels_sample)),
-    )
-    km.fit(pixels_sample)
+    # Sort cluster indices by frequency descending
+    sorted_idx = np.argsort(counts)[::-1]
+    centers = kmeans.cluster_centers_[sorted_idx]
 
-    centers = km.cluster_centers_          # (n_colors, 3)
-    labels = km.labels_                    # (n_sample,)
-    counts = np.bincount(labels, minlength=n_colors)
-    order = np.argsort(-counts)            # descending by cluster size
-
-    return [centers[i].clip(0, 255).astype(int).tolist() for i in order]
-
+    palette = [tuple(map(int, center)) for center in centers]
+    return palette
 
 def get_pixel_color(arr: np.ndarray, x: int, y: int) -> list:
     """
@@ -79,3 +48,15 @@ def get_pixel_color(arr: np.ndarray, x: int, y: int) -> list:
     x = int(np.clip(x, 0, w - 1))
     y = int(np.clip(y, 0, h - 1))
     return arr[y, x].tolist()
+
+def sort_palette_by_saturation(palette):
+    """
+    Sort RGB colours by saturation (higher saturation first).
+    Saturation = (max(R,G,B) - min(R,G,B)) / max(R,G,B)
+    """
+    def saturation(rgb):
+        r, g, b = rgb
+        mx = max(r, g, b)
+        mn = min(r, g, b)
+        return (mx - mn) / (mx + 1e-6)
+    return sorted(palette, key=saturation, reverse=True)
