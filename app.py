@@ -369,29 +369,48 @@ with tab_img:
         st.markdown("### 🔍 Interactive Pixel Picker")
         st.caption("👆 Click anywhere on the calibrated image below to sample that exact colour.")
 
-        # Create the interactive image picker (it auto-scales to the column)
+        h_img, w_img = arr.shape[:2]
+
+        # Create the interactive image picker
         click_coords = streamlit_image_coordinates(
             cal_img, 
             key="pixel_picker",
             use_column_width=True
         )
 
-        # Process the click event
         if click_coords is not None:
-            px, py = click_coords["x"], click_coords["y"]
+            px = click_coords["x"]
+            py = click_coords["y"]
             
             # Create a fingerprint so it doesn't get stuck in a re-run loop
             click_id = f"{px}_{py}"
             
             if st.session_state.get("last_click_id") != click_id:
-                # Grab the exact RGB values from the NumPy array
-                picked = get_pixel_color(arr, int(px), int(py))
+                
+                # 🛠️ FIX THE SCALING BUG:
+                # Get the visual CSS width of the image on the screen
+                rendered_width = click_coords.get("width")
+                if not rendered_width:
+                    rendered_width = w_img # Fallback just in case
+                
+                # Calculate the difference between the screen size and the real array size
+                scale_ratio = w_img / rendered_width
+                
+                # Map the click back to the true original coordinates
+                actual_x = int(px * scale_ratio)
+                actual_y = int(py * scale_ratio)
+                
+                # Clamp coordinates to ensure they don't exceed array limits due to rounding
+                actual_x = max(0, min(actual_x, w_img - 1))
+                actual_y = max(0, min(actual_y, h_img - 1))
+                
+                # Sample the TRUE pixel
+                picked = get_pixel_color(arr, actual_x, actual_y)
                 
                 # Update the selected color in session state
-                _set_selected(picked, f"Pixel ({int(px)}, {int(py)})")
+                _set_selected(picked, f"Pixel ({actual_x}, {actual_y})")
                 st.session_state["last_click_id"] = click_id
                 
-                # Force a UI update to show the new selection
                 st.rerun()
 
         if st.session_state.selected_color:
