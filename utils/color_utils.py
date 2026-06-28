@@ -1,6 +1,6 @@
 """
 color_utils.py — Core color science utilities for PaletteCraft
-Handles RGB ↔ XYZ ↔ CIELAB conversions, Delta-E, and Kubelka-Munk subtractive mixing.
+Handles RGB ↔ XYZ ↔ CIELAB conversions, Delta‑E, and Kubelka‑Munk subtractive mixing.
 """
 
 import numpy as np
@@ -9,36 +9,36 @@ import numpy as np
 # ──────────────────────────────── Hex / RGB ───────────────────────────────────
 
 def hex_to_rgb(hex_color: str) -> tuple:
-    """Convert '#RRGGBB' hex string to (R, G, B) int tuple (0-255)."""
+    """Convert '#RRGGBB' hex string to (R, G, B) int tuple (0‑255)."""
     hex_color = hex_color.lstrip("#")
     return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
 
 def rgb_to_hex(r, g, b) -> str:
-    """Convert R, G, B integers (0-255) to '#rrggbb' hex string."""
+    """Convert R, G, B integers (0‑255) to '#rrggbb' hex string."""
     return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
 
 
 # ──────────────────────────── Gamma / Linearisation ──────────────────────────
 
 def _srgb_to_linear(c: np.ndarray) -> np.ndarray:
-    """sRGB [0-1] → linear light [0-1] (remove gamma)."""
+    """sRGB [0‑1] → linear light [0‑1] (remove gamma)."""
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 
 
 def _linear_to_srgb(c: np.ndarray) -> np.ndarray:
-    """Linear light [0-1] → sRGB [0-1] (apply gamma)."""
+    """Linear light [0‑1] → sRGB [0‑1] (apply gamma)."""
     c = np.clip(c, 0.0, 1.0)
     return np.where(c <= 0.0031308, c * 12.92, 1.055 * (c ** (1.0 / 2.4)) - 0.055)
 
 
 def rgb_to_linear(rgb) -> np.ndarray:
-    """Convert RGB uint8 array/list [0-255] to linear float [0-1]."""
+    """Convert RGB uint8 array/list [0‑255] to linear float [0‑1]."""
     return _srgb_to_linear(np.asarray(rgb, dtype=float) / 255.0)
 
 
 def linear_to_rgb255(linear: np.ndarray) -> np.ndarray:
-    """Convert linear float [0-1] to uint8 [0-255]."""
+    """Convert linear float [0‑1] to uint8 [0‑255]."""
     return np.clip(_linear_to_srgb(linear) * 255.0, 0, 255).astype(np.uint8)
 
 
@@ -63,74 +63,80 @@ def _f_lab(t: np.ndarray) -> np.ndarray:
 
 def rgb_to_lab(rgb) -> np.ndarray:
     """
-    Convert a single RGB color [0-255] to CIELAB [L*, a*, b*].
-
+    Convert RGB color(s) to CIELAB.
+    
+    Works for:
+      - a single RGB triplet (list/array of length 3)  → returns (3,) array
+      - an image (H, W, 3) or any (..., 3) shape      → returns same shape with Lab values
+    
     Args:
-        rgb: array-like of length 3 (R, G, B)
-
+        rgb: array-like of RGB values, either (3,) or (..., 3) with uint8 [0‑255].
     Returns:
-        np.ndarray([L, a, b])
+        np.ndarray of Lab values (float), same shape as input.
     """
-    linear = _srgb_to_linear(np.asarray(rgb, dtype=float) / 255.0)
-    xyz = _M_RGB_XYZ @ linear
-    xyz_n = xyz / _D65
-    f = _f_lab(xyz_n)
-    L = 116.0 * f[1] - 16.0
-    a = 500.0 * (f[0] - f[1])
-    b = 200.0 * (f[1] - f[2])
-    return np.array([L, a, b], dtype=float)
-
-
-def rgb_image_to_lab(arr: np.ndarray) -> np.ndarray:
-    """
-    Vectorised RGB image (H, W, 3) uint8 → CIELAB (H, W, 3) float32.
-    Optimised for full-image Delta-E comparisons.
-    """
-    h, w = arr.shape[:2]
-    flat = arr.reshape(-1, 3).astype(np.float64) / 255.0
-
-    linear = _srgb_to_linear(flat)                    # (N, 3)
-    xyz = (linear @ _M_RGB_XYZ.T)                      # (N, 3)
-    xyz_n = xyz / _D65                                  # (N, 3)
-    f = _f_lab(xyz_n)                                   # (N, 3)
-
+    rgb = np.asarray(rgb, dtype=np.float64)
+    # Handle single color (1D)
+    if rgb.ndim == 1:
+        linear = _srgb_to_linear(rgb / 255.0)
+        xyz = _M_RGB_XYZ @ linear
+        xyz_n = xyz / _D65
+        f = _f_lab(xyz_n)
+        L = 116.0 * f[1] - 16.0
+        a = 500.0 * (f[0] - f[1])
+        b = 200.0 * (f[1] - f[2])
+        return np.array([L, a, b], dtype=float)
+    
+    # Handle multi-dimensional (image / list of colors)
+    original_shape = rgb.shape
+    flat = rgb.reshape(-1, 3)               # (N, 3)
+    linear = _srgb_to_linear(flat / 255.0)  # (N, 3)
+    # Correct multiplication: (N,3) @ (3,3) -> (N,3)
+    xyz = flat @ _M_RGB_XYZ.T               # (N, 3)
+    xyz_n = xyz / _D65                      # (N, 3)
+    f = _f_lab(xyz_n)                       # (N, 3)
+    
     L = 116.0 * f[:, 1] - 16.0
     a_ch = 500.0 * (f[:, 0] - f[:, 1])
     b_ch = 200.0 * (f[:, 1] - f[:, 2])
-
-    lab = np.stack([L, a_ch, b_ch], axis=1).astype(np.float32)
-    return lab.reshape(h, w, 3)
+    
+    lab = np.stack([L, a_ch, b_ch], axis=1)   # (N, 3)
+    return lab.reshape(original_shape)
 
 
 # ─────────────────────────────── Delta-E ─────────────────────────────────────
 
-def delta_e_76(lab1: np.ndarray, lab2: np.ndarray) -> float:
-    """CIE76 Euclidean Delta-E between two Lab colors."""
-    return float(np.linalg.norm(np.asarray(lab1) - np.asarray(lab2)))
-
-
-def delta_e_image(lab_image: np.ndarray, target_lab: np.ndarray) -> np.ndarray:
+def delta_e_76(lab1: np.ndarray, lab2: np.ndarray) -> np.ndarray:
     """
-    Vectorised CIE76 Delta-E between every pixel and a target Lab color.
-
+    CIE76 Euclidean Delta-E between two Lab color representations.
+    
+    Works for:
+      - single Lab triplets (shape (3,)) → returns float
+      - images or arrays of Lab values (..., 3) → returns array of same shape
+        but with the last dimension removed (Euclidean distance along last axis).
+    
     Args:
-        lab_image : (H, W, 3) float32 array
-        target_lab: (3,) float array [L, a, b]
-
+        lab1, lab2: Lab arrays (same shape, last dimension must be 3).
     Returns:
-        (H, W) float32 array of per-pixel Delta-E values
+        Delta-E value(s): scalar if inputs are (3,), else array.
     """
-    diff = lab_image - target_lab.astype(np.float32)
-    return np.sqrt(np.sum(diff ** 2, axis=2))
+    lab1 = np.asarray(lab1, dtype=float)
+    lab2 = np.asarray(lab2, dtype=float)
+    diff = lab1 - lab2
+    # Compute Euclidean distance along the last axis (which is size 3)
+    de = np.sqrt(np.sum(diff ** 2, axis=-1))
+    # If both inputs are 1‑D, return a Python float for convenience
+    if lab1.ndim == 1 and lab2.ndim == 1:
+        return float(de)
+    return de
 
 
 # ─────────────────── Kubelka-Munk Subtractive Mixing ─────────────────────────
 
 def km_mix_subtractive(colors: list, weights) -> np.ndarray:
     """
-    Mix physical pigment colors using the Kubelka-Munk (K-M) theory.
+    Mix physical pigment colors using the Kubelka‑Munk (K‑M) theory.
 
-    K-M models paint as having absorption (K) and scattering (S) coefficients.
+    K‑M models paint as having absorption (K) and scattering (S) coefficients.
     Per channel: K/S = (1 - R)² / (2R),   mix K/S linearly,
     then back to reflectance: R = 1 + K/S − √((K/S)² + 2·K/S)
 
@@ -138,7 +144,7 @@ def km_mix_subtractive(colors: list, weights) -> np.ndarray:
     for subtractive (pigment) mixing.
 
     Args:
-        colors : list of array-like RGB [0-255], one per pigment
+        colors : list of array-like RGB [0‑255], one per pigment
         weights: list/array of mixing weights (need not sum to 1)
 
     Returns:
@@ -156,7 +162,7 @@ def km_mix_subtractive(colors: list, weights) -> np.ndarray:
 
     mixed_ks = sum(wi * ks for wi, ks in zip(w, km_channels))
 
-    # Saunderson/K-M inversion
+    # Saunderson/K‑M inversion
     mixed_lin = 1.0 + mixed_ks - np.sqrt(mixed_ks ** 2 + 2.0 * mixed_ks)
     mixed_lin = np.clip(mixed_lin, 0.0, 1.0)
 

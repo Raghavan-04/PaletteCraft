@@ -590,96 +590,53 @@ with tab_recipe:
 # ║  TAB 3 — PAINT MAP                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 with tab_map:
-    st.markdown("### 🗺️ Paint Map Visualiser")
-    st.caption(
-        "Highlights every region of the photo where your selected colour lives, "
-        "so you know exactly where to apply each pigment."
-    )
+    st.markdown("### 🗺️ Layer-by-Layer Paint Map")
+    st.caption("Slide through the steps to see exactly how to build up your painting, color by color.")
 
-    if st.session_state.calibrated_array is None:
-        st.info("Upload an image in the **Image & Palette** tab first.")
-    elif st.session_state.selected_color is None:
-        st.info("Select a target colour in the **Image & Palette** tab first.")
+    if st.session_state.calibrated_array is None or not st.session_state.palette:
+        st.info("Upload an image in the **Image & Palette** tab first to extract your colours.")
     else:
-        sel     = st.session_state.selected_color
-        sel_hex = rgb_to_hex(*sel)
-
+        # Settings
         col_c1, col_c2 = st.columns(2)
         with col_c1:
             threshold = st.slider(
-                "ΔE Threshold (match sensitivity)",
+                "Match Sensitivity",
                 2.0, 30.0, st.session_state.threshold, 0.5,
-                help="Lower → only very close matches highlighted  |  Higher → wider colour range",
+                key="layer_thresh"
             )
             st.session_state.threshold = threshold
         with col_c2:
-            dim = st.slider(
-                "Background brightness",
-                0.0, 1.0, 0.2, 0.05,
-                help="0 = fully grayscale background  |  1 = fully coloured",
-            )
+            dim = st.slider("Background Brightness", 0.0, 1.0, 0.2, 0.05, key="layer_dim")
 
-        neon_name = st.selectbox("Highlight colour", list(NEON_COLOURS.keys()))
-        neon_rgb  = NEON_COLOURS[neon_name]
-
-        col_g, col_info = st.columns([1, 2])
-        with col_g:
-            gen = st.button("🗺️ Generate Paint Map", type="primary", width="stretch")
-        with col_info:
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
-                f'<div style="width:20px;height:20px;background:{sel_hex};'
-                f'border-radius:50%;border:1px solid #888;"></div>'
-                f'<span>Target: <code>{sel_hex.upper()}</code> — '
-                f'{st.session_state.selected_color_name}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        if gen:
-            arr = st.session_state.calibrated_array
-            with st.spinner("Building paint map…"):
-                pm = generate_paint_map(
-                    arr,
-                    target_rgb=sel,
-                    threshold=threshold,
-                    overlay_color=neon_rgb,
-                    overlay_alpha=0.65,
-                    dim_factor=dim,
+        if st.button("🏗️ Build Layer Sequence", type="primary", width="stretch"):
+            with st.spinner("Processing layers..."):
+                # Call our new cumulative function
+                from utils.paint_map import generate_layered_steps
+                steps = generate_layered_steps(
+                    st.session_state.calibrated_array, 
+                    st.session_state.palette, 
+                    threshold=threshold, 
+                    dim_factor=dim
                 )
-                pct = get_match_percentage(arr, sel, threshold)
-            st.session_state.paint_map_image = pm
-            st.success(f"✅ ~{pct:.1f} % of image pixels match within ΔE < {threshold:.1f}")
+                st.session_state.layer_steps = steps
+                st.success("Sequence generated!")
 
-        if st.session_state.paint_map_image:
+        # If we have generated the steps, display the interactive slider
+        if "layer_steps" in st.session_state and st.session_state.layer_steps:
+            steps = st.session_state.layer_steps
+            total_layers = len(steps)
+            
             st.markdown("---")
-            col_orig2, col_map2 = st.columns(2)
-            with col_orig2:
-                st.markdown("**Calibrated Image**")
-                st.image(
-                    Image.fromarray(st.session_state.calibrated_array),
-                    width="stretch",
-                )
-            with col_map2:
-                st.markdown("**🗺️ Paint Map Overlay**")
-                st.image(st.session_state.paint_map_image, width="stretch")
-
-            st.markdown(f"""
-            **Legend:**
-            - 🔳 Dimmed / greyscale → different from target colour
-            - 🌸 **{neon_name}** highlight → areas matching target (ΔE ≤ {st.session_state.threshold:.1f})
-            """)
-
-            buf = io.BytesIO()
-            st.session_state.paint_map_image.save(buf, format="PNG")
-            st.download_button(
-                "💾 Download Paint Map (.png)",
-                data=buf.getvalue(),
-                file_name="palettecraft_paint_map.png",
-                mime="image/png",
-                width="stretch",
-            )
-
+            # Slider to scrub through the painting process
+            step_idx = st.slider("Painting Progress (Layer)", 1, total_layers, 1) - 1
+            
+            # Show the active layer
+            current_layer_img = steps[step_idx]
+            current_rgb = st.session_state.palette[step_idx]
+            current_hex = rgb_to_hex(*current_rgb)
+            
+            st.markdown(f"**Step {step_idx + 1}:** Adding <code>{current_hex.upper()}</code>", unsafe_allow_html=True)
+            st.image(current_layer_img, width="stretch")
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 4 — MY INVENTORY                                                      ║
