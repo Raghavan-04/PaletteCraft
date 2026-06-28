@@ -38,7 +38,7 @@ The relationship between a paint layer's reflectance ($R$) and its absorption an
 
 $$\frac{K}{S} = \frac{(1 - R)^2}{2R}$$
 
-To further study for different application: https://github.com/Raghavan-04/Colorimetric-Analysis-of-Sweat-for-Sodium-monitoring
+To further study for different application: 
 - [Colorimetric Analysis of Sweat for Sodium Monitoring](https://github.com/Raghavan-04/Colorimetric-Analysis-of-Sweat-for-Sodium-monitoring)
   
 ### How PaletteCraft Uses It:
