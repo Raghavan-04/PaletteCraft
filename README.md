@@ -1,7 +1,7 @@
 
 # PaletteCraft 🎨 
 
-**AI-Powered Paint Mixing Assistant for Artists**
+**Paint Mixing Assistant for Artists**
 
 PaletteCraft is an interactive Streamlit application that bridges the gap between digital photography and physical painting. By leveraging computer vision and perceptual color science, it analyzes your inspiration photos, extracts dominant color palettes, and calculates exact physical mixing recipes using the paints you actually own.
 
