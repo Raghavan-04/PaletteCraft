@@ -589,54 +589,53 @@ with tab_recipe:
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 3 — PAINT MAP                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
+# ─── inside app.py, the tab_map section ───
+
 with tab_map:
     st.markdown("### 🗺️ Layer-by-Layer Paint Map")
-    st.caption("Slide through the steps to see exactly how to build up your painting, color by color.")
+    st.caption("Slide through the steps to see the painting build up from a white board.")
 
     if st.session_state.calibrated_array is None or not st.session_state.palette:
         st.info("Upload an image in the **Image & Palette** tab first to extract your colours.")
     else:
-        # Settings
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            threshold = st.slider(
-                "Match Sensitivity",
-                2.0, 30.0, st.session_state.threshold, 0.5,
-                key="layer_thresh"
-            )
-            st.session_state.threshold = threshold
-        with col_c2:
-            dim = st.slider("Background Brightness", 0.0, 1.0, 0.2, 0.05, key="layer_dim")
+        # Fixed threshold – no user sliders
+        THRESHOLD = 8.0   # You can adjust this constant if you like
 
-        if st.button("🏗️ Build Layer Sequence", type="primary", width="stretch"):
-            with st.spinner("Processing layers..."):
-                # Call our new cumulative function
+        if st.button("🏗️ Build Layer Sequence", type="primary", use_container_width=True):
+            with st.spinner("Generating painting steps..."):
                 from utils.paint_map import generate_layered_steps
                 steps = generate_layered_steps(
-                    st.session_state.calibrated_array, 
-                    st.session_state.palette, 
-                    threshold=threshold, 
-                    dim_factor=dim
+                    st.session_state.calibrated_array,
+                    st.session_state.palette,
+                    threshold=THRESHOLD
                 )
                 st.session_state.layer_steps = steps
-                st.success("Sequence generated!")
+                st.success("Sequence ready!")
 
-        # If we have generated the steps, display the interactive slider
         if "layer_steps" in st.session_state and st.session_state.layer_steps:
             steps = st.session_state.layer_steps
-            total_layers = len(steps)
-            
+            total = len(steps)   # palette length + 1 (final image)
+
             st.markdown("---")
-            # Slider to scrub through the painting process
-            step_idx = st.slider("Painting Progress (Layer)", 1, total_layers, 1) - 1
-            
-            # Show the active layer
-            current_layer_img = steps[step_idx]
-            current_rgb = st.session_state.palette[step_idx]
-            current_hex = rgb_to_hex(*current_rgb)
-            
-            st.markdown(f"**Step {step_idx + 1}:** Adding <code>{current_hex.upper()}</code>", unsafe_allow_html=True)
-            st.image(current_layer_img, width="stretch")
+            # Slider from 1 to total, step 1
+            step_idx = st.slider(
+                "Painting Progress (Layer)",
+                1, total, 1
+            ) - 1   # zero‑based index
+
+            current_img = steps[step_idx]
+
+            # Label the step
+            if step_idx < total - 1:
+                color_hex = rgb_to_hex(*st.session_state.palette[step_idx])
+                label = f"**Step {step_idx + 1}:** Painting <code>{color_hex.upper()}</code>"
+            else:
+                label = "**Final Step:** The full calibrated image"
+
+            st.markdown(label, unsafe_allow_html=True)
+            st.image(current_img, use_column_width=True)
+        else:
+            st.info("Click the button above to generate the layer sequence.")
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  TAB 4 — MY INVENTORY                                                      ║
