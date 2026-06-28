@@ -21,7 +21,7 @@ import copy
 import numpy as np
 import streamlit as st
 from PIL import Image, UnidentifiedImageError 
-
+from streamlit_image_coordinates import streamlit_image_coordinates
 from utils.calibration import auto_white_balance, get_image_array
 from utils.color_utils import hex_to_rgb, rgb_to_hex, rgb_to_lab, delta_e_76
 from utils.kmeans_palette import extract_palette, get_pixel_color
@@ -366,27 +366,32 @@ with tab_img:
                         st.rerun()
 
         st.markdown("---")
-        st.markdown("### 🔍 Custom Pixel Picker")
-        st.caption(
-            "Enter pixel coordinates (shown in most image viewers) to sample any colour."
+        st.markdown("### 🔍 Interactive Pixel Picker")
+        st.caption("👆 Click anywhere on the calibrated image below to sample that exact colour.")
+
+        # Create the interactive image picker (it auto-scales to the column)
+        click_coords = streamlit_image_coordinates(
+            cal_img, 
+            key="pixel_picker",
+            use_column_width=True
         )
 
-        h_img, w_img = arr.shape[:2]
-        st.info(
-            f"Image size: **{w_img} × {h_img}** px  —  "
-            f"X ∈ [0, {w_img-1}]   Y ∈ [0, {h_img-1}]"
-        )
-
-        col_x, col_y, col_btn = st.columns([2, 2, 1])
-        with col_x:
-            px = st.number_input("X (column →)", 0, w_img - 1, w_img // 2)
-        with col_y:
-            py = st.number_input("Y (row ↓)",    0, h_img - 1, h_img // 2)
-        with col_btn:
-            st.write("")
-            if st.button("🎯 Sample", width="stretch"):
+        # Process the click event
+        if click_coords is not None:
+            px, py = click_coords["x"], click_coords["y"]
+            
+            # Create a fingerprint so it doesn't get stuck in a re-run loop
+            click_id = f"{px}_{py}"
+            
+            if st.session_state.get("last_click_id") != click_id:
+                # Grab the exact RGB values from the NumPy array
                 picked = get_pixel_color(arr, int(px), int(py))
+                
+                # Update the selected color in session state
                 _set_selected(picked, f"Pixel ({int(px)}, {int(py)})")
+                st.session_state["last_click_id"] = click_id
+                
+                # Force a UI update to show the new selection
                 st.rerun()
 
         if st.session_state.selected_color:
