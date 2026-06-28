@@ -1,5 +1,5 @@
 
-# 🎨 PaletteCraft
+# PaletteCraft 🎨 
 
 **AI-Powered Paint Mixing Assistant for Artists**
 
