@@ -285,7 +285,7 @@ with st.sidebar:
 st.markdown("""
 <div class="pc-header">
   <h1>🎨 PaletteCraft</h1>
-  <p>AI-powered paint mixing assistant — from photo to physical pigment recipe</p>
+  <p>Paint mixing assistant — from photo to physical pigment recipe</p>
 </div>
 """, unsafe_allow_html=True)
 
