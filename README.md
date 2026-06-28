@@ -16,6 +16,34 @@ PaletteCraft is an interactive Streamlit application that bridges the gap betwee
 * **Interactive Paint Map:** Generates a visual neon overlay on your original photo, highlighting exactly where a specific mixed pigment should be applied on your canvas.
 * **Digital Paint Box:** Manage your physical inventory. Add custom paints via Hex codes, import/export your collection as JSON, and auto-calculate recipes based *only* on the tubes you own.
 
+## 🌟 Why PaletteCraft is Different
+
+Most color-picking apps on the market fail artists because they treat digital pixels and physical paint as the same thing. PaletteCraft is built specifically for the realities of the traditional studio:
+
+* **It matches the object, not the lighting:** If you take a photo of a white coffee cup under a warm tungsten bulb, most apps will tell you to paint the cup orange. PaletteCraft's auto-calibration strips away ambient lighting casts so you mix the true local color of the object.
+* **It knows physical paint behaves badly:** Standard apps use digital RGB/CMYK math. They assume mixing blue and yellow creates perfect green. In reality, physical pigments rely on complex absorption and scattering. PaletteCraft uses actual optical physics (Kubelka-Munk) to predict these muddy, non-linear physical interactions.
+* **It works with what you have:** There is no point in an app telling you to use "Cobalt Teal" if you don't own it. PaletteCraft's inventory system restricts its mathematical solver to only use the physical tubes currently sitting on your desk.
+
+---
+
+## 🧠 The Science: Kubelka-Munk Theory
+
+Unlike digital screens that mix light additively (RGB), physical paint absorbs light subtractively. To accurately simulate this, PaletteCraft utilizes the **Kubelka-Munk Theory of Reflectance**, a foundational mathematical model used in the industrial paint, textile, and paper industries since 1931.
+
+Instead of simply averaging RGB values, the Kubelka-Munk model evaluates paints based on two distinct optical properties:
+* **$K$ (Absorption):** How much light the pigment absorbs (turning it into heat).
+* **$S$ (Scattering):** How much light the pigment scatters back to the viewer's eye.
+
+The relationship between a paint layer's reflectance ($R$) and its absorption and scattering is defined by the core Kubelka-Munk equation:
+
+$$\frac{K}{S} = \frac{(1 - R)^2}{2R}$$
+
+### How PaletteCraft Uses It:
+When you ask the app to mix a recipe, it doesn't just average the hex codes. 
+1. It converts your target color into its theoretical reflectance.
+2. It calculates the individual $\frac{K}{S}$ ratios for the paints in your inventory.
+3. It simulates mixing them at various concentration ratios ($c_1, c_2, ...$). Because physical paint mixing is non-linear (adding 10% black darkens a mix far more than adding 10% white lightens it), this physics-based approach ensures the resulting recipe matches how real paint behaves on a real palette.
+4. Finally, it measures the simulated physical mix against your target color using CIELAB perceptual space ($\Delta E$) to find the absolute best match.
 ---
 
 ## 🛠️ Installation & Setup
