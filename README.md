@@ -7,7 +7,7 @@ PaletteCraft is an interactive Streamlit application that bridges the gap betwee
 
 ---
 
-## ✨ Features
+##  Features
 
 * **🔬 Auto White-Balance Calibration:** Removes unnatural lighting casts from your photos using Gray-World and Max-RGB algorithms, ensuring you are color-matching the true pigments.
 * **🎨 K-Means Palette Extraction:** Automatically identifies the 5 dominant hues in your image. Includes a Custom Pixel Picker for hyper-specific sampling.
