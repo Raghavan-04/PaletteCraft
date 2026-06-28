@@ -16,7 +16,7 @@ PaletteCraft is an interactive Streamlit application that bridges the gap betwee
 * **Interactive Paint Map:** Generates a visual neon overlay on your original photo, highlighting exactly where a specific mixed pigment should be applied on your canvas.
 * **Digital Paint Box:** Manage your physical inventory. Add custom paints via Hex codes, import/export your collection as JSON, and auto-calculate recipes based *only* on the tubes you own.
 
-## 🌟 Why PaletteCraft is Different
+##  Why PaletteCraft is Different
 
 Most color-picking apps on the market fail artists because they treat digital pixels and physical paint as the same thing. PaletteCraft is built specifically for the realities of the traditional studio:
 
@@ -26,7 +26,7 @@ Most color-picking apps on the market fail artists because they treat digital pi
 
 ---
 
-## 🧠 The Science: Kubelka-Munk Theory
+## Kubelka-Munk Theory
 
 Unlike digital screens that mix light additively (RGB), physical paint absorbs light subtractively. To accurately simulate this, PaletteCraft utilizes the **Kubelka-Munk Theory of Reflectance**, a foundational mathematical model used in the industrial paint, textile, and paper industries since 1931.
 
@@ -37,6 +37,8 @@ Instead of simply averaging RGB values, the Kubelka-Munk model evaluates paints 
 The relationship between a paint layer's reflectance ($R$) and its absorption and scattering is defined by the core Kubelka-Munk equation:
 
 $$\frac{K}{S} = \frac{(1 - R)^2}{2R}$$
+
+To further study for different application: https://github.com/Raghavan-04/Colorimetric-Analysis-of-Sweat-for-Sodium-monitoring
 
 ### How PaletteCraft Uses It:
 When you ask the app to mix a recipe, it doesn't just average the hex codes. 
