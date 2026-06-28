@@ -13,7 +13,7 @@ PaletteCraft is an interactive Streamlit application that bridges the gap betwee
 * **K-Means Palette Extraction:** Automatically identifies the 5 dominant hues in your image. Includes a Custom Pixel Picker for hyper-specific sampling.
 * **Subtractive Recipe Engine:** Uses the **Kubelka-Munk** subtractive physics model to calculate exactly how to mix your physical paints to achieve a target color.
 * **Perceptual Color Matching:** Evaluates recipe accuracy using the **CIELAB $\Delta E_{76}$** standard, mimicking how the human eye perceives color differences.
-* **🗺️ Interactive Paint Map:** Generates a visual neon overlay on your original photo, highlighting exactly where a specific mixed pigment should be applied on your canvas.
+* **Interactive Paint Map:** Generates a visual neon overlay on your original photo, highlighting exactly where a specific mixed pigment should be applied on your canvas.
 * **📦 Digital Paint Box:** Manage your physical inventory. Add custom paints via Hex codes, import/export your collection as JSON, and auto-calculate recipes based *only* on the tubes you own.
 
 ---
