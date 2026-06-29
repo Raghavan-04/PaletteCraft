@@ -114,7 +114,7 @@ The application is divided into four main tabs to guide your workflow:
 
 ---
 
-## 🧠 The Science Behind the App
+## The Science Behind the App
 
 Unlike digital screens that mix light additively (RGB), physical paint absorbs light subtractively. Mixing `#FF0000` (Red) and `#00FF00` (Green) digitally yields Yellow, but mixing red and green physical paint yields a muddy brown.
 
