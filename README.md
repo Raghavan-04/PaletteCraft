@@ -103,7 +103,7 @@ PaletteCraft/
 
 ---
 
-## 📖 How to Use
+## How to Use
 
 The application is divided into four main tabs to guide your workflow:
 
