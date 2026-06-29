@@ -108,7 +108,7 @@ PaletteCraft/
 The application is divided into four main tabs to guide your workflow:
 
 1. ** Image & Palette:** Start here. Upload an inspiration photo or snap one with your webcam. The app will auto-calibrate the lighting and extract a clickable dominant color palette.
-2. **🧪 Recipe Builder:** Once a color is selected, this tab reveals the exact mixing ratios. It breaks down the math into an "Easy Scoop Method" (e.g., 2 scoops Yellow + 0.5 scoops Crimson) and allows you to download a text file of the recipe for your studio.
+2. ** Recipe Builder:** Once a color is selected, this tab reveals the exact mixing ratios. It breaks down the math into an "Easy Scoop Method" (e.g., 2 scoops Yellow + 0.5 scoops Crimson) and allows you to download a text file of the recipe for your studio.
 3. **🗺️ Paint Map:** Visualizes where your newly mixed color belongs. Adjust the $\Delta E$ sensitivity threshold to see all the regions in the photo that match your target pigment.
 4. **🎨 My Inventory:** Manage the paints you physically own. The recipe engine will *only* suggest mixes using active inventory items. Export your collection to keep it safe, or import new palettes via JSON.
 
